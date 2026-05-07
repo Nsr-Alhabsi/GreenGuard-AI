@@ -65,7 +65,7 @@ def waste_scanner_page() -> None:
 
     if uploaded_file:
         image = Image.open(io.BytesIO(uploaded_file.read())).convert("RGB")
-        st.image(image, caption="Uploaded item", use_column_width=True)
+        st.image(image, caption="Uploaded item", use_container_width=True)
 
         analyze = st.button("Analyze Item", type="primary")
         if analyze:
