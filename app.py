@@ -13,10 +13,10 @@ from carbon_check import carbon_check_page
 from waste_scanner import waste_scanner_page
 
 try:
-    import ollama
+    from groq import Groq
     HAS_LLM = True
 except Exception:
-    ollama = None
+    Groq = None
     HAS_LLM = False
 # ---------------------------------------------- #
 
@@ -38,8 +38,8 @@ C = {
     "PAGE_ICON": CONFIG.get("pageconfig", {}).get("Icon"),
     "PAGE_LAYOUT": CONFIG.get("pageconfig", {}).get("Layout"),
     "SIDEBAR_STATE": CONFIG.get("pageconfig", {}).get("SidebarState"),
-    "OLLAMA_MODEL": CONFIG.get("ollama", {}).get("OllamaModel"),
-    "SYSTEM_PROMPT": CONFIG.get("ollama", {}).get("OllamaPrompt"),
+    "GROQ_MODEL": CONFIG.get("llm", {}).get("GroqModel"),
+    "SYSTEM_PROMPT": CONFIG.get("llm", {}).get("SystemPrompt"),
     "TIPS": CONFIG.get("tips", []),
     "AI_CONFIG": CONFIG.get("AI", {}),
     "TEXT_CONFIG": CONFIG.get("text", {}),
@@ -72,8 +72,12 @@ def init_session_state() -> None:
     st.session_state.setdefault("page", "home")
     st.session_state.setdefault("chat_history", [])
     st.session_state.setdefault("daily_tip", None)
-    if HAS_LLM and "ollama_client" not in st.session_state:
-        st.session_state["ollama_client"] = ollama
+    if HAS_LLM and "groq_client" not in st.session_state:
+        try:
+            api_key = st.secrets.get("GROQ_API_KEY")
+        except Exception:
+            api_key = None
+        st.session_state["groq_client"] = Groq(api_key=api_key) if api_key else None
 
 
 def ensure_daily_tip() -> None:
@@ -86,16 +90,17 @@ def ensure_daily_tip() -> None:
 
 
 def call_llm(user_text: str) -> str:
-    """Calls the Ollama chat endpoint to get an AI response."""
-    if not HAS_LLM or "ollama_client" not in st.session_state:
+    """Calls the Groq chat endpoint to get an AI response."""
+    client = st.session_state.get("groq_client")
+    if not HAS_LLM or client is None:
         return (
-            "Ollama is not available. Please ensure the service is running and "
-            f"the `{C['OLLAMA_MODEL']}` model is pulled."
+            "The AI assistant isn't configured. Set a `GROQ_API_KEY` in this app's "
+            "Streamlit secrets to enable chat."
         )
 
     thinking_msg = C["AI_CONFIG"].get("ThinkingMessage", "Thinking...")
     messages = [{"role": "system", "content": C["SYSTEM_PROMPT"]}]
-    
+
     for msg in st.session_state.chat_history:
         if msg["text"] == thinking_msg:
             continue
@@ -105,12 +110,11 @@ def call_llm(user_text: str) -> str:
     messages.append({"role": "user", "content": user_text})
 
     try:
-        resp = st.session_state.ollama_client.chat(
-            model=C["OLLAMA_MODEL"],
+        resp = client.chat.completions.create(
+            model=C["GROQ_MODEL"],
             messages=messages,
-            stream=False,
         )
-        return resp.get("message", {}).get("content", "").strip() or (
+        return resp.choices[0].message.content.strip() or (
             "I couldn't generate a response this time. Please try asking in a different way."
         )
     except Exception as exc:
